@@ -5,7 +5,7 @@ seeds = false
 skip-lint = false
 
 [programs.devnet]
-round = "6kwfCYGF6XG5gCjNYui67UP5wqbzVDQuErCjA9s9vDDL"
+round = "xTiDMT64VvFu7mG4jB3EE2SZyoUpxUG2eyJiGHDpkEE"
 
 [registry]
 url = "https://api.apr.dev"

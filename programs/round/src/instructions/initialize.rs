@@ -199,6 +199,7 @@ pub fn buy_slot(ctx: Context<BuySlot>, round_index: u32, amount: u64) -> Result<
                 chad_user.remain_slot_number = accts.user_info.remain_slot_number;
                 chad_user.last_round_index = accts.user_info.last_round_index;
                 chad_user.claimed_slot_number = accts.user_info.claimed_slot_number;
+                
                 break;
             }
         }
@@ -215,12 +216,15 @@ pub fn claim_slot(ctx: Context<ClaimSlot>) -> Result<()> {
     require!(accts.global_state.owner == accts.owner.key(), RoundError::NotAllowedOwner);
     require!(accts.user_info.reference == accts.reference.key(), RoundError::InvalidReference);
    
-    if accts.global_state.total_round < accts.user_info.last_round_index + 1 {
+    if accts.global_state.total_round <= accts.user_info.last_round_index + 1 {
         amount = ((2000 - accts.global_state.fee) * accts.user_info.total_slot_number + accts.user_info.remain_slot_number * (2000 - accts.global_state.fee) / 1000) / 1000;
 
         let remain_slot_number = accts.user_info.total_slot_number * (2000 - accts.global_state.fee) + accts.user_info.remain_slot_number - 1000 * amount.clone();
 
         fee_amount += amount * accts.global_state.fee * accts.global_state.slot_token_price / 1000;
+
+        msg!("the claim amount is {:?}", amount);
+        msg!("the claim fee amount is {:?}", fee_amount);
 
         accts.user_info.total_slot_number = 0;
         accts.user_info.remain_slot_number = remain_slot_number;
@@ -232,6 +236,9 @@ pub fn claim_slot(ctx: Context<ClaimSlot>) -> Result<()> {
 
         fee_amount += amount * accts.global_state.fee * accts.global_state.slot_token_price / 1000;
 
+        msg!("The claim amount is {:?}", amount);
+        msg!("The claim fee amount is {:?}", fee_amount);
+
         accts.user_info.total_slot_number = 0;
         accts.user_info.remain_slot_number = remain_slot_number;
         accts.user_info.last_slot_number = 0;
@@ -241,7 +248,7 @@ pub fn claim_slot(ctx: Context<ClaimSlot>) -> Result<()> {
     let (_, bump) = Pubkey::find_program_address(&[VAULT_SEED], &crate::ID);
 
     invoke_signed(
-        &system_instruction::transfer(&accts.vault.key(), &accts.user.key(), amount),
+        &system_instruction::transfer(&accts.vault.key(), &accts.user.key(), amount * accts.global_state.slot_token_price),
         &[
             accts.vault.to_account_info().clone(),
             accts.user.to_account_info().clone(),
@@ -269,6 +276,19 @@ pub fn claim_slot(ctx: Context<ClaimSlot>) -> Result<()> {
         ],
         &[&[VAULT_SEED, &[bump]]],
     )?;
+
+    if accts.user_info.chad {
+        for chad_user in accts.round.chad_users.iter_mut(){
+            if chad_user.address == accts.user_info.address {
+                chad_user.total_slot_number = accts.user_info.total_slot_number;
+                chad_user.last_slot_number = accts.user_info.last_slot_number;
+                chad_user.remain_slot_number = accts.user_info.remain_slot_number;
+                chad_user.claimed_slot_number = accts.user_info.claimed_slot_number;
+
+                break;
+            }
+        }
+    }
 
     Ok(())
 }
@@ -419,6 +439,9 @@ pub struct ClaimSlot<'info> {
     )]
     pub global_state: Account<'info, GlobalState>,
 
+    #[account(
+        mut,
+    )]
     /// CHECK: this should be set by admin
     pub owner: AccountInfo<'info>,  // To send fee to owner
 
@@ -429,6 +452,9 @@ pub struct ClaimSlot<'info> {
     /// CHECK: this should be set by admin
     pub vault: AccountInfo<'info>,  // to receive SOL
 
+    #[account(
+        mut,
+    )]
     /// CHECK
     pub reference: AccountInfo<'info>, 
 
@@ -438,6 +464,13 @@ pub struct ClaimSlot<'info> {
         bump,
     )]
     pub user_info: Account<'info, UserInfo>,
+
+    #[account(
+        mut,
+        seeds = [ROUND_SEED],
+        bump, 
+    )]
+    pub round: Account<'info, RoundState>,
 
     pub system_program: Program<'info, System>,
 }
