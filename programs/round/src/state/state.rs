@@ -4,18 +4,18 @@ use anchor_lang::prelude::*;
 #[derive(Default)]
 pub struct GlobalState {
     pub owner: Pubkey, 
-    pub total_round: u32,
+    pub total_round: u16,
     pub slot_token_price: u64,
     pub vault: Pubkey,
-    pub fee: u64,
+    pub fee: u32,
 }
 
 #[account]
 #[derive(Default)]
 pub struct RoundState {
-    pub round_index: u32,
-    pub total_slot_number: u64,
-    pub current_slot_number: u64,
+    pub round_index: u16,
+    pub total_slot_number: u32,
+    pub current_slot_number: u32,
     pub chad_users: Vec<UserInfoData>
 }
 
@@ -24,13 +24,14 @@ pub struct RoundState {
 pub struct UserInfo {
     pub address: Pubkey,
 
-    pub total_slot_number: u64,
-    pub last_slot_number: u64,
-    pub remain_slot_number: u64,
-    pub last_round_index: u32,
+    pub claimable_slot_number: u32,  // until last - 2 buy slot number
+    pub wait_slot_number: u32, // last - 1 buy slot number
+    pub last_slot_number: u32, // last buy slot number
+    pub remain_slot_number: u32,
+    pub last_round_index: u16,
     
-    pub claimed_slot_number: u64,
-    pub fee_amount: u64,
+    pub claimed_slot_number: u32,
+    pub fee_amount: u32,
     pub reference: Pubkey
 }
 
@@ -38,10 +39,10 @@ pub struct UserInfo {
 pub struct UserInfoData {
     pub address: Pubkey,
 
-    pub chad_total_slot_number: u64,
-    pub chad_last_slot_number: u64,
-    pub chad_remain_slot_number: u64,
-    pub chad_last_round_index: u32,
+    pub chad_wait_slot_number: u32,
+    pub chad_last_slot_number: u32,
+    pub chad_remain_slot_number: u32,
+    pub chad_last_round_index: u16,
 
-    pub fee_amount: u64,
+    pub fee_amount: u32,
 }

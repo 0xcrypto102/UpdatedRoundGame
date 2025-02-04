@@ -5,7 +5,7 @@ use solana_program::{program::{invoke, invoke_signed}, system_instruction};
 
 use std::mem::size_of;
 
-pub fn initialize(ctx: Context<Initialize>, slot_token_price: u64, fee: u64) -> Result<()> {
+pub fn initialize(ctx: Context<Initialize>, slot_token_price: u64, fee: u32) -> Result<()> {
     let accts = ctx.accounts;
     require!(fee < 100, RoundError::MaxFeeError);
 
@@ -19,7 +19,7 @@ pub fn initialize(ctx: Context<Initialize>, slot_token_price: u64, fee: u64) -> 
     Ok(())
 }
 
-pub fn update_fee(ctx: Context<Update>, new_fee: u64) -> Result<()> {
+pub fn update_fee(ctx: Context<Update>, new_fee: u32) -> Result<()> {
     let accts = ctx.accounts;
     require!(accts.global_state.owner == accts.owner.key(), RoundError::NotAllowedOwner);
 
@@ -27,7 +27,7 @@ pub fn update_fee(ctx: Context<Update>, new_fee: u64) -> Result<()> {
     Ok(())
 }
 
-pub fn create_round(ctx: Context<CreateRound>, round_index: u32) -> Result<()> {
+pub fn create_round(ctx: Context<CreateRound>, round_index: u16) -> Result<()> {
     let accts = ctx.accounts;
 
     require!(accts.global_state.owner == accts.owner.key(), RoundError::NotAllowedOwner);
@@ -37,54 +37,25 @@ pub fn create_round(ctx: Context<CreateRound>, round_index: u32) -> Result<()> {
     let current_index = accts.global_state.total_round;
     // create the new round
     accts.round.round_index = current_index + 1;
-    accts.round.total_slot_number = 2_u64.pow(round_index - 1);
+    accts.round.total_slot_number = 2_u32.pow((round_index - 1).into());
     accts.round.current_slot_number = 0;
     // update the global state
     accts.global_state.total_round += 1;
     let mut temp_slot_amount = 0;
-    let total_slot_number = accts.round.total_slot_number;
    
     // Check the chad mod users and auto claim & buy slots
     // Iterate through chad users and update their information
     for chad_user in accts.round.chad_users.iter_mut() {
-        if accts.global_state.total_round <= chad_user.chad_last_round_index + 1 {
-            // update the user info data
-            let available_amount = (chad_user.chad_total_slot_number * (2000 - accts.global_state.fee * 2) + chad_user.chad_remain_slot_number *  (1000 - accts.global_state.fee) / 1000) / 1000;
+        let available_amount = (chad_user.chad_wait_slot_number * (2000 - accts.global_state.fee * 2) + chad_user.chad_remain_slot_number *  (1000 - accts.global_state.fee) / 1000) / 1000;
+        let remain_slot_number = chad_user.chad_wait_slot_number * (2000 - accts.global_state.fee * 2) + chad_user.chad_remain_slot_number - 1000 * available_amount.clone();
 
-            let remain_slot_number = chad_user.chad_total_slot_number * (2000 - accts.global_state.fee * 2) + chad_user.chad_remain_slot_number - 1000 * available_amount.clone();
+        temp_slot_amount += available_amount;
 
-            temp_slot_amount += available_amount;
-
-            if temp_slot_amount > total_slot_number {
-                temp_slot_amount -= available_amount;
-                break;
-            }
-            chad_user.fee_amount += chad_user.chad_total_slot_number * accts.global_state.fee * 2;
-            chad_user.chad_total_slot_number = chad_user.chad_last_slot_number;
-            chad_user.chad_last_slot_number = available_amount;
-            chad_user.chad_remain_slot_number = remain_slot_number;
-
-            chad_user.chad_last_round_index = round_index;
-        } else {
-                // update the user info data
-                let available_amount = ((chad_user.chad_total_slot_number + chad_user.chad_last_slot_number) * (2000 - accts.global_state.fee * 2) + chad_user.chad_remain_slot_number *  (1000 - accts.global_state.fee) / 1000) / 1000;
-
-                let remain_slot_number = (chad_user.chad_total_slot_number + chad_user.chad_last_slot_number) * (2000 - 2 * accts.global_state.fee) + chad_user.chad_remain_slot_number - 1000 * available_amount.clone();
-
-                temp_slot_amount += available_amount;
-
-                if temp_slot_amount > total_slot_number {
-                    temp_slot_amount -= available_amount;
-                    break;
-                }
-
-                chad_user.fee_amount += (chad_user.chad_total_slot_number + chad_user.chad_remain_slot_number) * accts.global_state.fee * 2;
-                chad_user.chad_total_slot_number = 0;
-                chad_user.chad_last_slot_number = available_amount;
-                chad_user.chad_remain_slot_number = remain_slot_number;
-
-                chad_user.chad_last_round_index = round_index;
-            }
+        chad_user.fee_amount += chad_user.chad_wait_slot_number * accts.global_state.fee * 2;
+        chad_user.chad_wait_slot_number = chad_user.chad_last_slot_number;
+        chad_user.chad_last_slot_number = available_amount;
+        chad_user.chad_remain_slot_number = remain_slot_number;
+        chad_user.chad_last_round_index = round_index;
     }
 
     accts.round.current_slot_number = temp_slot_amount;
@@ -101,27 +72,25 @@ pub fn deactive_chad_mod(ctx: Context<ManageUserInfo>) -> Result<()> {
 
         if accts.user_info.last_round_index == removed_user.chad_last_round_index {
             // Update `user_info` with specific fields from the removed user
-            accts.user_info.total_slot_number += removed_user.chad_total_slot_number;
+            accts.user_info.wait_slot_number += removed_user.chad_wait_slot_number;
             accts.user_info.last_slot_number += removed_user.chad_last_slot_number;
             accts.user_info.remain_slot_number += removed_user.chad_remain_slot_number;
             accts.user_info.fee_amount += removed_user.fee_amount;
         } else {
-            accts.user_info.total_slot_number += accts.user_info.last_slot_number +  removed_user.chad_total_slot_number;
+            accts.user_info.wait_slot_number += accts.user_info.last_slot_number + removed_user.chad_wait_slot_number;
             accts.user_info.last_slot_number = removed_user.chad_last_slot_number;
             accts.user_info.remain_slot_number += removed_user.chad_remain_slot_number;
             accts.user_info.last_round_index = removed_user.chad_last_round_index;
             accts.user_info.fee_amount += removed_user.fee_amount;
-
         }
         // Remove the user from the `chad_users` list
         accts.round.chad_users.remove(index);
         msg!("removed user index {:?}", index);
     }
-
     Ok(())
 }
 
-pub fn buy_slot(ctx: Context<BuySlot>, round_index: u32, amount: u64, method: bool) -> Result<()> {
+pub fn buy_slot(ctx: Context<BuySlot>, round_index: u16, amount: u32, method: bool) -> Result<()> {
     let accts = ctx.accounts;
 
     require!(amount > 0, RoundError::ZeroAmount);
@@ -135,37 +104,29 @@ pub fn buy_slot(ctx: Context<BuySlot>, round_index: u32, amount: u64, method: bo
     if method {
         msg!("Buying slots with chad mod...");
         require!(amount >= 4, RoundError::SmallAmount);
-        if !accts.round.chad_users.iter().any(|user| user.address == accts.user_info.address) {
+        if let Some(user) = accts
+            .round
+            .chad_users
+            .iter_mut()
+            .find(|user| user.address == accts.user_info.address) {
+            // Modify the existing user directly in `accts.round.chad_users`
+            user.chad_last_slot_number += amount;
+        } else {
+            // If user doesn't exist, create a new one and push it to the vector
             let user_info_data = UserInfoData {
                 address: accts.user.key(),
-                chad_total_slot_number: 0,
+                chad_wait_slot_number: 0,
                 chad_last_slot_number: amount,
                 chad_remain_slot_number: 0,
                 chad_last_round_index: round_index,
                 fee_amount: 0,
             };
-            
+
             accts.round.chad_users.push(user_info_data);
-        } else {
-            for chad_user in accts.round.chad_users.iter_mut(){
-                if chad_user.address == accts.user_info.address {
-                    if chad_user.chad_last_round_index == round_index {
-                        chad_user.chad_last_slot_number += amount;
-                    } else {
-                        chad_user.chad_total_slot_number += chad_user.chad_last_slot_number;
-                        chad_user.chad_last_slot_number = amount;
-                        chad_user.chad_last_round_index = round_index;
-                    }
-     
-                    break;
-                }
-            }
         }
     } else {
         // update the user info data
         if accts.user_info.last_round_index == 0 {
-            accts.user_info.address = accts.user.key();
-            accts.user_info.total_slot_number = 0;
             accts.user_info.last_slot_number = amount;
             accts.user_info.claimed_slot_number = 0;
             accts.user_info.last_round_index = round_index;
@@ -175,7 +136,7 @@ pub fn buy_slot(ctx: Context<BuySlot>, round_index: u32, amount: u64, method: bo
             if accts.user_info.last_round_index == round_index {
                 accts.user_info.last_slot_number += amount;
             } else {
-                accts.user_info.total_slot_number += accts.user_info.last_slot_number;
+                accts.user_info.wait_slot_number += accts.user_info.last_slot_number;
                 accts.user_info.last_slot_number = amount;
                 accts.user_info.last_round_index = round_index;
             }
@@ -185,7 +146,7 @@ pub fn buy_slot(ctx: Context<BuySlot>, round_index: u32, amount: u64, method: bo
     accts.round.current_slot_number += amount;
 
     // send sol to vault
-    let transfer_amount = accts.global_state.slot_token_price * amount;
+    let transfer_amount = accts.global_state.slot_token_price * amount as u64;
 
     invoke(
         &system_instruction::transfer(
@@ -208,40 +169,41 @@ pub fn claim_slot(ctx: Context<ClaimSlot>) -> Result<()> {
     let mut amount = 0;
     let mut fee_amount = 0;
 
-    require!(accts.global_state.owner == accts.owner.key(), RoundError::NotAllowedOwner);
+    require!(accts.user_info.address == accts.owner.key(), RoundError::NotAllowedOwner);
     require!(accts.user_info.reference == accts.reference.key(), RoundError::InvalidReference);
    
     if accts.global_state.total_round <= accts.user_info.last_round_index + 1 {
-        let mut claim_amount = accts.user_info.total_slot_number * 2000;
+        let mut claim_amount = accts.user_info.claimable_slot_number * 2000;
         claim_amount += accts.user_info.remain_slot_number;
 
-        fee_amount = accts.user_info.fee_amount * accts.global_state.slot_token_price / 1000 + claim_amount.clone() * accts.global_state.fee * accts.global_state.slot_token_price / 1000000;
+        fee_amount = accts.user_info.fee_amount as u64 * accts.global_state.slot_token_price / 1000 + claim_amount.clone() as u64 * accts.global_state.fee as u64 * accts.global_state.slot_token_price / 1000000;
 
-        amount = claim_amount.clone() * (1000 - accts.global_state.fee) * accts.global_state.slot_token_price / 1000000;
+        amount = claim_amount.clone() as u64 * (1000 - accts.global_state.fee as u64) * accts.global_state.slot_token_price / 1000000;
 
         msg!("the claim amount is {:?}", amount);
         msg!("the claim fee amount is {:?}", fee_amount);
 
-        accts.user_info.total_slot_number = 0;
+        accts.user_info.claimable_slot_number = 0;
         accts.user_info.fee_amount = 0;
         accts.user_info.remain_slot_number = 0;
-        accts.user_info.claimed_slot_number += amount;
+        accts.user_info.claimed_slot_number += amount as u32;
     } else {
-        let mut claim_amount = (accts.user_info.total_slot_number + accts.user_info.last_slot_number) * 2000;
+        let mut claim_amount = (accts.user_info.claimable_slot_number + accts.user_info.wait_slot_number + accts.user_info.last_slot_number) * 2000;
         claim_amount += accts.user_info.remain_slot_number;
 
-        fee_amount =  accts.user_info.fee_amount * accts.global_state.slot_token_price / 1000  + claim_amount.clone() * accts.global_state.fee * accts.global_state.slot_token_price / 1000000;
+        fee_amount =  accts.user_info.fee_amount as u64 * accts.global_state.slot_token_price / 1000  + claim_amount.clone() as u64 * accts.global_state.fee as u64 * accts.global_state.slot_token_price / 1000000;
 
-        amount = claim_amount.clone() * (1000 - accts.global_state.fee) * accts.global_state.slot_token_price / 1000000;
+        amount = claim_amount.clone() as u64 * (1000 - accts.global_state.fee as u64) * accts.global_state.slot_token_price / 1000000;
 
         msg!("The claim amount is {:?}", amount);
         msg!("The claim fee amount is {:?}", fee_amount);
 
-        accts.user_info.total_slot_number = 0;
+        accts.user_info.claimable_slot_number = 0;
+        accts.user_info.wait_slot_number = 0;
         accts.user_info.fee_amount = 0;
         accts.user_info.remain_slot_number = 0;
         accts.user_info.last_slot_number = 0;
-        accts.user_info.claimed_slot_number += amount;
+        accts.user_info.claimed_slot_number += amount as u32;
     }
 
     let (_, bump) = Pubkey::find_program_address(&[VAULT_SEED], &crate::ID);
@@ -278,7 +240,6 @@ pub fn claim_slot(ctx: Context<ClaimSlot>) -> Result<()> {
 
     Ok(())
 }
-
 
 pub fn withdraw_sol(ctx: Context<WithDrawSOL>, amount:u64) -> Result<()> {
     let accts = ctx.accounts;
