@@ -8,8 +8,17 @@ pub enum RoundError {
     #[msg("Round: Invalid Round Index")]
     InvalidRoundIndex,
 
+    #[msg("Round: user should buy at least 4 slots to be enalbe the chad mod")]
+    NotEnoughAmountForChadMod,
+
+    #[msg("Round: The round was not finished yet.")]
+    RoundNotFinished,
+
     #[msg("Round: Over max slot count")]
     OverMaxSlot,
+
+    #[msg("Round: The amount is small to buy with chad mod. It should be 4 at least")]
+    SmallAmount,
 
     #[msg("Round: Already buy slot")]
     AlreadyBuySlot,
@@ -33,5 +42,8 @@ pub enum RoundError {
     ZeroAmount,
 
     #[msg("Round: The reference address is not correct")]
-    InvalidReference
+    InvalidReference, 
+
+    #[msg("Round: The user can't claim if chad mod is enabled")]
+    UnAbleToClaim
 }

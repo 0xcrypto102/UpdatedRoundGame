@@ -9,7 +9,7 @@ pub use constants::*;
 use instructions::*;
 pub use state::*;
 
-declare_id!("xTiDMT64VvFu7mG4jB3EE2SZyoUpxUG2eyJiGHDpkEE");
+declare_id!("Cbmi4x9FemSaBtjDLrjMGZiz64n3FGAoUZcFYrUDaYUg");
 
 #[program]
 pub mod round {
@@ -27,12 +27,12 @@ pub mod round {
         instructions::create_round(ctx,round_index)
     }
 
-    pub fn active_chad_mod(ctx: Context<ManageUserInfo>) -> Result<()> {
-        instructions::active_chad_mod(ctx)
+    pub fn deactive_chad_mod(ctx: Context<ManageUserInfo>) -> Result<()> {
+        instructions::deactive_chad_mod(ctx)
     }
 
-    pub fn buy_slot(ctx: Context<BuySlot>, round_index: u32, amount: u64) -> Result<()> {
-        instructions::buy_slot(ctx,round_index, amount)
+    pub fn buy_slot(ctx: Context<BuySlot>, round_index: u32, amount: u64, method: bool) -> Result<()> {
+        instructions::buy_slot(ctx,round_index, amount, method)
     }
 
     pub fn claim_slot(ctx: Context<ClaimSlot>) -> Result<()> {

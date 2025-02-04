@@ -23,22 +23,25 @@ pub struct RoundState {
 #[account]
 pub struct UserInfo {
     pub address: Pubkey,
-    pub chad: bool,
+
     pub total_slot_number: u64,
     pub last_slot_number: u64,
     pub remain_slot_number: u64,
     pub last_round_index: u32,
+    
     pub claimed_slot_number: u64,
+    pub fee_amount: u64,
     pub reference: Pubkey
 }
 
 #[derive(Default, AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct UserInfoData {
     pub address: Pubkey,
-    pub chad: bool,
-    pub total_slot_number: u64,
-    pub last_slot_number: u64,
-    pub remain_slot_number: u64,
-    pub last_round_index: u32,
-    pub claimed_slot_number: u64,
+
+    pub chad_total_slot_number: u64,
+    pub chad_last_slot_number: u64,
+    pub chad_remain_slot_number: u64,
+    pub chad_last_round_index: u32,
+
+    pub fee_amount: u64,
 }

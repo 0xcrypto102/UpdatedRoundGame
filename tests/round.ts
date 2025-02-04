@@ -50,10 +50,9 @@ describe("round", () => {
     console.log("vault->", vault.toString());
 
   });
-
   it("Is initialized!", async () => {
     // Add your test here.
-    const slotTokenPrice = 100000000; // 0.1SOL
+    const slotTokenPrice = 10000000; // 0.01SOL
     const fee = 25;// (2.5%)
     const tx = await program.rpc.initialize(
       new anchor.BN(slotTokenPrice),
@@ -72,6 +71,26 @@ describe("round", () => {
     const globalStateData = await program.account.globalState.fetch(globalState);
     console.log(globalStateData);
   });
+  /*
+  it("dd", async() => {
+    try {
+      const [round, bump] = await anchor.web3.PublicKey.findProgramAddress(
+        [
+          Buffer.from(ROUND_SEED),
+        ],
+        program.programId
+      );
+      
+      const roundData = await program.account.roundState.fetch(round);
+      console.log("roundData->", roundData);
+      const userInfo = await program.account.userInfo.all();
+      console.log("users->", userInfo);
+    } catch (error) {
+      console.log(error);
+    }
+  })
+    */
+  /*
   it("create round 1", async () => {
     // Round 1
     const [round, bump] = await anchor.web3.PublicKey.findProgramAddress(
@@ -118,9 +137,12 @@ describe("round", () => {
     console.log(globalStateData);
 
     try {
+      // false: no chad mod
+      // true: with chad mod
       const tx = await program.rpc.buySlot(
         roundIndex,
         new anchor.BN(amount),
+        false,
         {
           accounts: {
             user: user.publicKey,
@@ -141,6 +163,7 @@ describe("round", () => {
       console.log(error);
     }
   });
+
   it("create round 2", async () => {
     // Round 2
     roundIndex = 2;
@@ -192,6 +215,7 @@ describe("round", () => {
       const tx = await program.rpc.buySlot(
         roundIndex,
         new anchor.BN(amount),
+        false,
         {
           accounts: {
             user: user.publicKey,
@@ -240,7 +264,7 @@ describe("round", () => {
     console.log("tx->", tx);
   }); 
 
-  it("buy 4 with user slot in round 3", async () => {
+  it("buy 4 with user slot with chadmod in round 3", async () => {
     roundIndex = 3;
 
     const [round, bump1] = await anchor.web3.PublicKey.findProgramAddress(
@@ -265,6 +289,7 @@ describe("round", () => {
       const tx = await program.rpc.buySlot(
         roundIndex,
         new anchor.BN(amount),
+        true,
         {
           accounts: {
             user: user.publicKey,
@@ -290,7 +315,7 @@ describe("round", () => {
     }
   });
 
-  it("active chad mod", async() => {
+  it("de-active chad mod", async() => {
     try {
       const [round, bump] = await anchor.web3.PublicKey.findProgramAddress(
         [
@@ -307,7 +332,7 @@ describe("round", () => {
         program.programId
       );
 
-      const tx = await program.rpc.activeChadMod(
+      const tx = await program.rpc.deactiveChadMod(
         {
           accounts: {
             user: user.publicKey,
@@ -322,125 +347,7 @@ describe("round", () => {
       console.log(error);
     }
   });
-  it("create round 4", async () => {
-    // Round 2
-    roundIndex = 4;
-    const [round, bump] = await anchor.web3.PublicKey.findProgramAddress(
-      [
-        Buffer.from(ROUND_SEED),
-      ],
-      program.programId
-    );
-    const tx = await program.rpc.createRound(
-      roundIndex,
-      {
-        accounts: {
-          owner: owner.publicKey,
-          globalState,
-          round,
-          systemProgram: SystemProgram.programId
-        },
-        signers: [owner]
-      }
-    );
-    const roundData = await program.account.roundState.fetch(round);
-    console.log("roundData->", roundData);
-    console.log("tx->", tx);
-  }); 
-  
-  
-  it("buy 4 with user slot in round 4 and it will be failed cause chad_mod was active", async () => {
-    roundIndex = 4;
-
-    const [round, bump1] = await anchor.web3.PublicKey.findProgramAddress(
-      [
-        Buffer.from(ROUND_SEED),
-      ],
-      program.programId
-    );
-
-    const [userInfo, bump4] = await anchor.web3.PublicKey.findProgramAddress(
-      [
-        Buffer.from(ROUN_USER_INFO_SEED),
-        user.publicKey.toBuffer()
-      ],
-      program.programId
-    );
-
-    const amount = 1;
-    const globalStateData = await program.account.globalState.fetch(globalState);
-
-    try {
-      const tx = await program.rpc.buySlot(
-        roundIndex,
-        new anchor.BN(amount),
-        {
-          accounts: {
-            user: user.publicKey,
-            owner: new PublicKey(globalStateData.owner),
-            globalState,
-            round,
-            vault,
-            userInfo,
-            reference,
-            systemProgram: SystemProgram.programId,
-          },
-          signers: [user]
-        }
-      );
-      const roundData = await program.account.roundState.fetch(round);
-      console.log("roundData->", roundData);
-      console.log("tx->", tx);
-    } catch (error) {
-      console.log(error);
-    }
-  });
-  it("buy 4 with user1 slot in round 4", async () => {
-    roundIndex = 4;
-
-    const [round, bump1] = await anchor.web3.PublicKey.findProgramAddress(
-      [
-        Buffer.from(ROUND_SEED),
-      ],
-      program.programId
-    );
-
-    const [userInfo, bump4] = await anchor.web3.PublicKey.findProgramAddress(
-      [
-        Buffer.from(ROUN_USER_INFO_SEED),
-        user1.publicKey.toBuffer()
-      ],
-      program.programId
-    );
-
-    const amount = 3;
-    const globalStateData = await program.account.globalState.fetch(globalState);
-
-    try {
-      const tx = await program.rpc.buySlot(
-        roundIndex,
-        new anchor.BN(amount),
-        {
-          accounts: {
-            user: user1.publicKey,
-            owner: new PublicKey(globalStateData.owner),
-            globalState,
-            round,
-            vault,
-            userInfo,
-            reference,
-            systemProgram: SystemProgram.programId,
-          },
-          signers: [user1]
-        }
-      );
-      const roundData = await program.account.roundState.fetch(round);
-      console.log("roundData->", roundData);
-      console.log("tx->", tx);
-    } catch (error) {
-      console.log(error);
-    }
-  });
+ 
 
   it("claim slot in round 3", async () => {
     roundIndex = 3;
@@ -478,6 +385,7 @@ describe("round", () => {
             vault,
             reference,
             userInfo,
+            round,
             systemProgram: SystemProgram.programId
           },
           signers: [user]
@@ -512,4 +420,5 @@ describe("round", () => {
     lamportBalance = (balance / 1000000000);
     console.log("lamportBalance after withdraw->", lamportBalance);
   });
+  */
 });

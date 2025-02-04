@@ -31,7 +31,8 @@ pub fn create_round(ctx: Context<CreateRound>, round_index: u32) -> Result<()> {
     let accts = ctx.accounts;
 
     require!(accts.global_state.owner == accts.owner.key(), RoundError::NotAllowedOwner);
-    require!(accts.global_state.total_round + 1 == round_index, RoundError::InvalidRoundIndex) ;
+    require!(accts.global_state.total_round + 1 == round_index, RoundError::InvalidRoundIndex);
+    require!(accts.round.total_slot_number == accts.round.current_slot_number, RoundError::RoundNotFinished);
 
     let current_index = accts.global_state.total_round;
     // create the new round
@@ -42,50 +43,48 @@ pub fn create_round(ctx: Context<CreateRound>, round_index: u32) -> Result<()> {
     accts.global_state.total_round += 1;
     let mut temp_slot_amount = 0;
     let total_slot_number = accts.round.total_slot_number;
+   
+    // Check the chad mod users and auto claim & buy slots
+    // Iterate through chad users and update their information
+    for chad_user in accts.round.chad_users.iter_mut() {
+        if accts.global_state.total_round <= chad_user.chad_last_round_index + 1 {
+            // update the user info data
+            let available_amount = (chad_user.chad_total_slot_number * (2000 - accts.global_state.fee * 2) + chad_user.chad_remain_slot_number *  (1000 - accts.global_state.fee) / 1000) / 1000;
 
-    if accts.global_state.total_round >= 3 {
-        // Check the chad mod users and auto claim & buy slots
-        // Iterate through chad users and update their information
-        for chad_user in accts.round.chad_users.iter_mut() {
-            if chad_user.chad && chad_user.last_round_index != 0 {
-                if accts.global_state.total_round <= chad_user.last_round_index + 1 {
-                    // update the user info data
-                    let available_amount = (chad_user.total_slot_number * (2000 - accts.global_state.fee) + chad_user.remain_slot_number *  (2000 - accts.global_state.fee) / 1000) / 1000;
+            let remain_slot_number = chad_user.chad_total_slot_number * (2000 - accts.global_state.fee * 2) + chad_user.chad_remain_slot_number - 1000 * available_amount.clone();
 
-                    let remain_slot_number = chad_user.total_slot_number * (2000 - accts.global_state.fee) + chad_user.remain_slot_number - 1000 * available_amount.clone();
+            temp_slot_amount += available_amount;
 
-                    temp_slot_amount += available_amount;
-
-                    if temp_slot_amount > total_slot_number {
-                        temp_slot_amount -= available_amount;
-                        break;
-                    }
-
-                    chad_user.total_slot_number = chad_user.last_slot_number;
-                    chad_user.last_slot_number = available_amount;
-                    chad_user.remain_slot_number = remain_slot_number;
-
-                    chad_user.last_round_index = round_index;
-                } else {
-                    // update the user info data
-                    let available_amount = ((chad_user.total_slot_number + chad_user.last_slot_number) * (2000 - accts.global_state.fee) + chad_user.remain_slot_number *  (2000 - accts.global_state.fee) / 1000) / 1000;
-
-                    let remain_slot_number = (chad_user.total_slot_number + chad_user.last_slot_number) * (2000 - accts.global_state.fee) + chad_user.remain_slot_number - 1000 * available_amount.clone();
-
-                    if temp_slot_amount > total_slot_number {
-                        temp_slot_amount -= available_amount;
-                        break;
-                    }
-
-                    chad_user.total_slot_number = 0;
-                    chad_user.last_slot_number = available_amount;
-                    chad_user.remain_slot_number = remain_slot_number;
-
-                    chad_user.last_round_index = round_index;
-                }
+            if temp_slot_amount > total_slot_number {
+                temp_slot_amount -= available_amount;
+                break;
             }
-            
-        }
+            chad_user.fee_amount += chad_user.chad_total_slot_number * accts.global_state.fee * 2;
+            chad_user.chad_total_slot_number = chad_user.chad_last_slot_number;
+            chad_user.chad_last_slot_number = available_amount;
+            chad_user.chad_remain_slot_number = remain_slot_number;
+
+            chad_user.chad_last_round_index = round_index;
+        } else {
+                // update the user info data
+                let available_amount = ((chad_user.chad_total_slot_number + chad_user.chad_last_slot_number) * (2000 - accts.global_state.fee * 2) + chad_user.chad_remain_slot_number *  (1000 - accts.global_state.fee) / 1000) / 1000;
+
+                let remain_slot_number = (chad_user.chad_total_slot_number + chad_user.chad_last_slot_number) * (2000 - 2 * accts.global_state.fee) + chad_user.chad_remain_slot_number - 1000 * available_amount.clone();
+
+                temp_slot_amount += available_amount;
+
+                if temp_slot_amount > total_slot_number {
+                    temp_slot_amount -= available_amount;
+                    break;
+                }
+
+                chad_user.fee_amount += (chad_user.chad_total_slot_number + chad_user.chad_remain_slot_number) * accts.global_state.fee * 2;
+                chad_user.chad_total_slot_number = 0;
+                chad_user.chad_last_slot_number = available_amount;
+                chad_user.chad_remain_slot_number = remain_slot_number;
+
+                chad_user.chad_last_round_index = round_index;
+            }
     }
 
     accts.round.current_slot_number = temp_slot_amount;
@@ -93,70 +92,95 @@ pub fn create_round(ctx: Context<CreateRound>, round_index: u32) -> Result<()> {
     Ok(())
 }
 
-pub fn active_chad_mod(ctx: Context<ManageUserInfo>) -> Result<()> {
+pub fn deactive_chad_mod(ctx: Context<ManageUserInfo>) -> Result<()> {
     let accts = ctx.accounts;
 
-    accts.user_info.chad = !accts.user_info.chad;
+    // If no longer a chad, update user_info with the corresponding info from `chad_users`
+    if let Some(index) = accts.round.chad_users.iter().position(|user| user.address == accts.user_info.address) {
+        let removed_user = accts.round.chad_users[index].clone();
 
-    if accts.user_info.chad {
-        if !accts.round.chad_users.iter().any(|user| user.address == accts.user_info.address) {
-            let user_info_data = UserInfoData {
-                address: accts.user.key(),
-                chad: true,
-                total_slot_number: accts.user_info.total_slot_number,
-                last_slot_number: accts.user_info.last_slot_number,
-                remain_slot_number: accts.user_info.remain_slot_number,
-                last_round_index: accts.user_info.last_round_index,
-                claimed_slot_number: accts.user_info.claimed_slot_number
-            };
-            
-            accts.round.chad_users.push(user_info_data);
-        }
-    } else {
-        // If no longer a chad, update user_info with the corresponding info from `chad_users`
-        if let Some(index) = accts.round.chad_users.iter().position(|user| user.address == accts.user_info.address) {
-            let removed_user = accts.round.chad_users[index].clone();
-            
+        if accts.user_info.last_round_index == removed_user.chad_last_round_index {
             // Update `user_info` with specific fields from the removed user
-            accts.user_info.total_slot_number = removed_user.total_slot_number;
-            accts.user_info.last_slot_number = removed_user.last_slot_number;
-            accts.user_info.remain_slot_number = removed_user.remain_slot_number;
-            accts.user_info.last_round_index = removed_user.last_round_index;
-            accts.user_info.claimed_slot_number = removed_user.claimed_slot_number;
+            accts.user_info.total_slot_number += removed_user.chad_total_slot_number;
+            accts.user_info.last_slot_number += removed_user.chad_last_slot_number;
+            accts.user_info.remain_slot_number += removed_user.chad_remain_slot_number;
+            accts.user_info.fee_amount += removed_user.fee_amount;
+        } else {
+            accts.user_info.total_slot_number += accts.user_info.last_slot_number +  removed_user.chad_total_slot_number;
+            accts.user_info.last_slot_number = removed_user.chad_last_slot_number;
+            accts.user_info.remain_slot_number += removed_user.chad_remain_slot_number;
+            accts.user_info.last_round_index = removed_user.chad_last_round_index;
+            accts.user_info.fee_amount += removed_user.fee_amount;
 
-            // Remove the user from the `chad_users` list
-            accts.round.chad_users.remove(index);
-            msg!("removed user index {:?}", index);
         }
+        // Remove the user from the `chad_users` list
+        accts.round.chad_users.remove(index);
+        msg!("removed user index {:?}", index);
     }
 
     Ok(())
 }
 
-pub fn buy_slot(ctx: Context<BuySlot>, round_index: u32, amount: u64) -> Result<()> {
+pub fn buy_slot(ctx: Context<BuySlot>, round_index: u32, amount: u64, method: bool) -> Result<()> {
     let accts = ctx.accounts;
 
     require!(amount > 0, RoundError::ZeroAmount);
+    require!(round_index == accts.round.round_index, RoundError::InvalidRoundIndex);
+    require!(accts.global_state.total_round == round_index, RoundError::InvalidRoundIndex);
+    require!(accts.round.current_slot_number + amount <= accts.round.total_slot_number, RoundError::OverMaxSlot);
+    // require!(accts.user_info.last_round_index < round_index, RoundError::AlreadyBuySlot);
+    
     msg!("Current round's solt number is {:?} and total slot is {:?}",accts.round.current_slot_number, accts.round.total_slot_number);
 
-    if accts.user_info.chad {
-        msg!("This user's chad mod was active. So the contract will update the user info cause it was update when create the new round");
-        for chad_user in accts.round.chad_users.iter_mut(){
-            if chad_user.address == accts.user_info.address {
-                accts.user_info.total_slot_number = chad_user.total_slot_number;
-                accts.user_info.last_slot_number = chad_user.last_slot_number;
-                accts.user_info.remain_slot_number = chad_user.remain_slot_number;
-                accts.user_info.last_round_index = chad_user.last_round_index;
-                accts.user_info.claimed_slot_number = chad_user.claimed_slot_number;
-                break;
+    if method {
+        msg!("Buying slots with chad mod...");
+        require!(amount >= 4, RoundError::SmallAmount);
+        if !accts.round.chad_users.iter().any(|user| user.address == accts.user_info.address) {
+            let user_info_data = UserInfoData {
+                address: accts.user.key(),
+                chad_total_slot_number: 0,
+                chad_last_slot_number: amount,
+                chad_remain_slot_number: 0,
+                chad_last_round_index: round_index,
+                fee_amount: 0,
+            };
+            
+            accts.round.chad_users.push(user_info_data);
+        } else {
+            for chad_user in accts.round.chad_users.iter_mut(){
+                if chad_user.address == accts.user_info.address {
+                    if chad_user.chad_last_round_index == round_index {
+                        chad_user.chad_last_slot_number += amount;
+                    } else {
+                        chad_user.chad_total_slot_number += chad_user.chad_last_slot_number;
+                        chad_user.chad_last_slot_number = amount;
+                        chad_user.chad_last_round_index = round_index;
+                    }
+     
+                    break;
+                }
+            }
+        }
+    } else {
+        // update the user info data
+        if accts.user_info.last_round_index == 0 {
+            accts.user_info.address = accts.user.key();
+            accts.user_info.total_slot_number = 0;
+            accts.user_info.last_slot_number = amount;
+            accts.user_info.claimed_slot_number = 0;
+            accts.user_info.last_round_index = round_index;
+            accts.user_info.fee_amount = 0;
+            accts.user_info.reference = accts.reference.key();
+        } else {
+            if accts.user_info.last_round_index == round_index {
+                accts.user_info.last_slot_number += amount;
+            } else {
+                accts.user_info.total_slot_number += accts.user_info.last_slot_number;
+                accts.user_info.last_slot_number = amount;
+                accts.user_info.last_round_index = round_index;
             }
         }
     }
-
-    require!(accts.round.current_slot_number + amount <= accts.round.total_slot_number, RoundError::OverMaxSlot);
-    require!(accts.user_info.last_round_index < round_index, RoundError::AlreadyBuySlot);
-    require!(accts.global_state.total_round == round_index, RoundError::InvalidRoundIndex);
-
     // update the round data
     accts.round.current_slot_number += amount;
 
@@ -176,35 +200,6 @@ pub fn buy_slot(ctx: Context<BuySlot>, round_index: u32, amount: u64) -> Result<
         ],
     )?;
 
-    // update the user info data
-    if accts.user_info.last_round_index == 0 {
-        accts.user_info.address = accts.user.key();
-        accts.user_info.total_slot_number = 0;
-        accts.user_info.last_slot_number = amount;
-        accts.user_info.claimed_slot_number = 0;
-        accts.user_info.last_round_index = round_index;
-        accts.user_info.reference = accts.reference.key();
-    } else {
-        accts.user_info.total_slot_number += accts.user_info.last_slot_number;
-        accts.user_info.last_slot_number = amount;
-        accts.user_info.last_round_index = round_index;
-    }
-
-    if accts.user_info.chad {
-        msg!("This user's chad mod was active. So the contract will update the user info cause it was update when create the new round");
-        for chad_user in accts.round.chad_users.iter_mut(){
-            if chad_user.address == accts.user_info.address {
-                chad_user.total_slot_number = accts.user_info.total_slot_number;
-                chad_user.last_slot_number = accts.user_info.last_slot_number;
-                chad_user.remain_slot_number = accts.user_info.remain_slot_number;
-                chad_user.last_round_index = accts.user_info.last_round_index;
-                chad_user.claimed_slot_number = accts.user_info.claimed_slot_number;
-                
-                break;
-            }
-        }
-    }
-
     Ok(())
 }
 
@@ -217,30 +212,34 @@ pub fn claim_slot(ctx: Context<ClaimSlot>) -> Result<()> {
     require!(accts.user_info.reference == accts.reference.key(), RoundError::InvalidReference);
    
     if accts.global_state.total_round <= accts.user_info.last_round_index + 1 {
-        amount = ((2000 - accts.global_state.fee) * accts.user_info.total_slot_number + accts.user_info.remain_slot_number * (2000 - accts.global_state.fee) / 1000) / 1000;
+        let mut claim_amount = accts.user_info.total_slot_number * 2000;
+        claim_amount += accts.user_info.remain_slot_number;
 
-        let remain_slot_number = accts.user_info.total_slot_number * (2000 - accts.global_state.fee) + accts.user_info.remain_slot_number - 1000 * amount.clone();
+        fee_amount = accts.user_info.fee_amount * accts.global_state.slot_token_price / 1000 + claim_amount.clone() * accts.global_state.fee * accts.global_state.slot_token_price / 1000000;
 
-        fee_amount += amount * accts.global_state.fee * accts.global_state.slot_token_price / 1000;
+        amount = claim_amount.clone() * (1000 - accts.global_state.fee) * accts.global_state.slot_token_price / 1000000;
 
         msg!("the claim amount is {:?}", amount);
         msg!("the claim fee amount is {:?}", fee_amount);
 
         accts.user_info.total_slot_number = 0;
-        accts.user_info.remain_slot_number = remain_slot_number;
+        accts.user_info.fee_amount = 0;
+        accts.user_info.remain_slot_number = 0;
         accts.user_info.claimed_slot_number += amount;
     } else {
-        amount = ((2000 - accts.global_state.fee) * (accts.user_info.total_slot_number + accts.user_info.last_slot_number) + accts.user_info.remain_slot_number * (2000 - accts.global_state.fee) / 1000) / 1000;
+        let mut claim_amount = (accts.user_info.total_slot_number + accts.user_info.last_slot_number) * 2000;
+        claim_amount += accts.user_info.remain_slot_number;
 
-        let remain_slot_number = (accts.user_info.total_slot_number + accts.user_info.last_slot_number) * (2000 - accts.global_state.fee) + accts.user_info.remain_slot_number - 1000 * amount.clone();
+        fee_amount =  accts.user_info.fee_amount * accts.global_state.slot_token_price / 1000  + claim_amount.clone() * accts.global_state.fee * accts.global_state.slot_token_price / 1000000;
 
-        fee_amount += amount * accts.global_state.fee * accts.global_state.slot_token_price / 1000;
+        amount = claim_amount.clone() * (1000 - accts.global_state.fee) * accts.global_state.slot_token_price / 1000000;
 
         msg!("The claim amount is {:?}", amount);
         msg!("The claim fee amount is {:?}", fee_amount);
 
         accts.user_info.total_slot_number = 0;
-        accts.user_info.remain_slot_number = remain_slot_number;
+        accts.user_info.fee_amount = 0;
+        accts.user_info.remain_slot_number = 0;
         accts.user_info.last_slot_number = 0;
         accts.user_info.claimed_slot_number += amount;
     }
@@ -248,7 +247,7 @@ pub fn claim_slot(ctx: Context<ClaimSlot>) -> Result<()> {
     let (_, bump) = Pubkey::find_program_address(&[VAULT_SEED], &crate::ID);
 
     invoke_signed(
-        &system_instruction::transfer(&accts.vault.key(), &accts.user.key(), amount * accts.global_state.slot_token_price),
+        &system_instruction::transfer(&accts.vault.key(), &accts.user.key(), amount),
         &[
             accts.vault.to_account_info().clone(),
             accts.user.to_account_info().clone(),
@@ -276,19 +275,6 @@ pub fn claim_slot(ctx: Context<ClaimSlot>) -> Result<()> {
         ],
         &[&[VAULT_SEED, &[bump]]],
     )?;
-
-    if accts.user_info.chad {
-        for chad_user in accts.round.chad_users.iter_mut(){
-            if chad_user.address == accts.user_info.address {
-                chad_user.total_slot_number = accts.user_info.total_slot_number;
-                chad_user.last_slot_number = accts.user_info.last_slot_number;
-                chad_user.remain_slot_number = accts.user_info.remain_slot_number;
-                chad_user.claimed_slot_number = accts.user_info.claimed_slot_number;
-
-                break;
-            }
-        }
-    }
 
     Ok(())
 }
