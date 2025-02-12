@@ -76,12 +76,21 @@ pub fn deactive_chad_mod(ctx: Context<ManageUserInfo>) -> Result<()> {
             accts.user_info.last_slot_number += removed_user.chad_last_slot_number;
             accts.user_info.remain_slot_number += removed_user.chad_remain_slot_number;
             accts.user_info.fee_amount += removed_user.fee_amount;
+        } else if accts.user_info.last_round_index == removed_user.chad_last_round_index - 1 {
+            // Update `user_info` with specific fields from the removed user
+            accts.user_info.claimable_slot_number += accts.user_info.wait_slot_number;
+            accts.user_info.wait_slot_number = accts.user_info.last_slot_number + removed_user.chad_wait_slot_number;
+            accts.user_info.last_slot_number = removed_user.chad_last_slot_number;
+            accts.user_info.last_round_index = removed_user.chad_last_round_index;
+            accts.user_info.remain_slot_number += removed_user.chad_remain_slot_number;
+            accts.user_info.fee_amount += removed_user.fee_amount;
         } else {
-            accts.user_info.wait_slot_number += accts.user_info.last_slot_number + removed_user.chad_wait_slot_number;
+            accts.user_info.claimable_slot_number += accts.user_info.last_slot_number + accts.user_info.wait_slot_number;
+            accts.user_info.wait_slot_number = removed_user.chad_wait_slot_number;
             accts.user_info.last_slot_number = removed_user.chad_last_slot_number;
             accts.user_info.remain_slot_number += removed_user.chad_remain_slot_number;
-            accts.user_info.last_round_index = removed_user.chad_last_round_index;
             accts.user_info.fee_amount += removed_user.fee_amount;
+            accts.user_info.last_round_index = removed_user.chad_last_round_index;
         }
         // Remove the user from the `chad_users` list
         accts.round.chad_users.remove(index);
@@ -122,12 +131,27 @@ pub fn buy_slot(ctx: Context<BuySlot>, round_index: u16, amount: u32, method: bo
                 fee_amount: 0,
             };
 
+            if accts.user_info.address != accts.user.key() {
+                accts.user_info.address = accts.user.key();
+                accts.user_info.reference = accts.reference.key();
+                accts.user_info.claimable_slot_number = 0;
+                accts.user_info.wait_slot_number = 0;
+                accts.user_info.claimed_slot_number = 0;
+                accts.user_info.last_slot_number = 0;
+                accts.user_info.last_round_index = 0;
+                accts.user_info.remain_slot_number = 0;
+                accts.user_info.fee_amount = 0;
+            }
+
             accts.round.chad_users.push(user_info_data);
         }
     } else {
         // update the user info data
         if accts.user_info.last_round_index == 0 {
+            accts.user_info.address = accts.user.key();
             accts.user_info.last_slot_number = amount;
+            accts.user_info.claimable_slot_number = 0;
+            accts.user_info.wait_slot_number = 0;
             accts.user_info.claimed_slot_number = 0;
             accts.user_info.last_round_index = round_index;
             accts.user_info.fee_amount = 0;
@@ -135,8 +159,13 @@ pub fn buy_slot(ctx: Context<BuySlot>, round_index: u16, amount: u32, method: bo
         } else {
             if accts.user_info.last_round_index == round_index {
                 accts.user_info.last_slot_number += amount;
+            } else if accts.user_info.last_round_index == round_index - 1 {
+                accts.user_info.claimable_slot_number += accts.user_info.wait_slot_number;
+                accts.user_info.wait_slot_number = accts.user_info.last_slot_number;
+                accts.user_info.last_slot_number = amount;
+                accts.user_info.last_round_index = round_index;
             } else {
-                accts.user_info.wait_slot_number += accts.user_info.last_slot_number;
+                accts.user_info.claimable_slot_number += accts.user_info.last_slot_number + accts.user_info.wait_slot_number;
                 accts.user_info.last_slot_number = amount;
                 accts.user_info.last_round_index = round_index;
             }
@@ -169,11 +198,27 @@ pub fn claim_slot(ctx: Context<ClaimSlot>) -> Result<()> {
     let mut amount = 0;
     let mut fee_amount = 0;
 
-    require!(accts.user_info.address == accts.owner.key(), RoundError::NotAllowedOwner);
+    require!(accts.user_info.address == accts.user.key(), RoundError::NotAllowedOwner);
+    require!(accts.global_state.owner == accts.owner.key(), RoundError::NotAllowedOwner);
     require!(accts.user_info.reference == accts.reference.key(), RoundError::InvalidReference);
    
-    if accts.global_state.total_round <= accts.user_info.last_round_index + 1 {
+    if accts.global_state.total_round == accts.user_info.last_round_index {
         let mut claim_amount = accts.user_info.claimable_slot_number * 2000;
+        claim_amount += accts.user_info.remain_slot_number;
+
+        fee_amount = accts.user_info.fee_amount as u64 * accts.global_state.slot_token_price / 1000 + claim_amount.clone() as u64 * accts.global_state.fee as u64 * accts.global_state.slot_token_price / 1000000;
+
+        amount = claim_amount.clone() as u64 * (1000 - accts.global_state.fee as u64) * accts.global_state.slot_token_price / 1000000;
+
+        msg!("the claim amount is {:?}", amount);
+        msg!("the claim fee amount is {:?}", fee_amount);
+
+        accts.user_info.claimable_slot_number = 0;
+        accts.user_info.fee_amount = 0;
+        accts.user_info.remain_slot_number = 0;
+        accts.user_info.claimed_slot_number += amount as u32;
+    } else if accts.global_state.total_round == accts.user_info.last_round_index - 1 {
+        let mut claim_amount = (accts.user_info.claimable_slot_number + accts.user_info.wait_slot_number) * 2000;
         claim_amount += accts.user_info.remain_slot_number;
 
         fee_amount = accts.user_info.fee_amount as u64 * accts.global_state.slot_token_price / 1000 + claim_amount.clone() as u64 * accts.global_state.fee as u64 * accts.global_state.slot_token_price / 1000000;
